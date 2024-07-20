@@ -166,6 +166,7 @@ class MeshBlock {
   //! defined in either the prob file or default_pgen.cpp in ../pgen/
   void UserWorkBeforeOutput(ParameterInput *pin); // called in Mesh fn (friend class)
   void UserWorkInLoop();                          // called in TimeIntegratorTaskList
+  void UserWorkInStage(int stage);
 
  private:
   // data

@@ -99,6 +99,11 @@ void __attribute__((weak)) MeshBlock::UserWorkInLoop() {
   return;
 }
 
+void __attribute__((weak)) MeshBlock::UserWorkInStage(int stage) {
+  //do nothing
+  return;
+}
+
 //========================================================================================
 //! \fn void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin)
 //! \brief Function called before generating output files

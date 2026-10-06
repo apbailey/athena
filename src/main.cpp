@@ -19,6 +19,7 @@
 // C headers
 
 // C++ headers
+#include <algorithm>  // min()
 #include <cmath>      // sqrt()
 #include <csignal>    // ISO C/C++ signal() and sigset_t, sigemptyset() POSIX C extensions
 #include <cstdint>    // int64_t
@@ -266,6 +267,79 @@ int main(int argc, char *argv[]) {
   }
 #endif // ENABLE_EXCEPTIONS
 
+  //--- Step 3b. ------------------------------------------------------------------------
+  //! Optional TWIN mesh.  <twin>/input names a second input file; when it is set,
+  //! this executable evolves TWO independent Mesh objects in lockstep on a common
+  //! time axis.  They are advanced uncoupled here; one-way coupling (B reading A's
+  //! state on a surface) is layered on top in MeshBlock::UserWorkInLoop.
+  //!
+  //! Both meshes must declare a distinct <mesh>/tag_offset: their block lists are
+  //! identical, so CreateBvalsMPITag() would otherwise produce identical tags and
+  //! the two meshes' boundary exchanges would cross-talk.
+  //!
+  //! \warning Problem generators keep per-run state in file-scope variables (e.g.
+  //! disk_planet.cpp holds gmp, r0, tinj there), and Mesh::InitUserMeshData is
+  //! called once per Mesh, so the SECOND mesh's values overwrite the first's.
+  //! Twins may therefore differ only in things stored per Mesh -- boundary
+  //! function enrollment, tag_offset, problem_id -- not in physical parameters.
+  //! Nothing checks this; it is the user's responsibility.
+
+  ParameterInput *pinput2 = nullptr;
+  Mesh *pmesh2 = nullptr;
+  TimeIntegratorTaskList *ptlist2 = nullptr;
+  Outputs *pouts2 = nullptr;
+  std::string twin_input = pinput->GetOrAddString("twin", "input", "");
+  const bool twin_enabled = !twin_input.empty();
+
+  if (twin_enabled) {
+    std::string why;
+    if (res_flag == 1)
+      why = "restarts are not supported with a twin mesh";
+    if (MAGNETIC_FIELDS_ENABLED || SELF_GRAVITY_ENABLED || STS_ENABLED
+        || NR_RADIATION_ENABLED || IM_RADIATION_ENABLED || CR_ENABLED
+        || CRDIFFUSION_ENABLED || CHEMRADIATION_ENABLED)
+      why = "a twin mesh is implemented for pure hydro only; this build enables"
+            " a physics module whose per-cycle work is not duplicated";
+    if (!why.empty()) {
+      if (Globals::my_rank == 0)
+        std::cout << "### FATAL ERROR in main" << std::endl
+                  << "<twin>/input is set but " << why << "." << std::endl;
+#ifdef MPI_PARALLEL
+      MPI_Finalize();
+#endif
+      return(0);
+    }
+    IOWrapper twinfile;
+    pinput2 = new ParameterInput;
+    twinfile.Open(twin_input.c_str(), IOWrapper::FileMode::read);
+    pinput2->LoadFromFile(twinfile);
+    twinfile.Close();
+    // NB: command-line overrides are applied to the primary input only.  The twin
+    // is driven entirely by its own file, so overrides must be written into it.
+    const int off1 = pinput->GetOrAddInteger("mesh", "tag_offset", 0);
+    const int off2 = pinput2->GetOrAddInteger("mesh", "tag_offset", 0);
+    const std::string id1 = pinput->GetOrAddString("job", "problem_id", "athena");
+    const std::string id2 = pinput2->GetOrAddString("job", "problem_id", "athena");
+    std::string bad;
+#ifdef MPI_PARALLEL
+    if (off1 == off2)
+      bad = "both meshes use <mesh>/tag_offset=" + std::to_string(off1)
+            + "; give them different values (e.g. 0 and 16)";
+#endif
+    if (id1 == id2)
+      bad = "both meshes use <job>/problem_id=" + id1
+            + "; they share an output directory and would overwrite each other";
+    if (!bad.empty()) {
+      if (Globals::my_rank == 0)
+        std::cout << "### FATAL ERROR in main" << std::endl << bad << "."
+                  << std::endl;
+#ifdef MPI_PARALLEL
+      MPI_Finalize();
+#endif
+      return(0);
+    }
+  }
+
   //--- Step 4. --------------------------------------------------------------------------
   // Construct and initialize Mesh
 
@@ -442,6 +516,39 @@ int main(int argc, char *argv[]) {
   }
 #endif // ENABLE_EXCEPTIONS
 
+  //--- Step 7b. ------------------------------------------------------------------------
+  // Build the twin mesh, its task list and its outputs.  Deliberately after the
+  // primary's Step 7: ChangeRunDir() has already run, so both meshes write into the
+  // same run directory and are distinguished by problem_id (checked in Step 3b).
+
+  if (twin_enabled) {
+    pmesh2 = new Mesh(pinput2, mesh_flag);
+    ptlist2 = new TimeIntegratorTaskList(pinput2, pmesh2);
+    pmesh2->Initialize(0, pinput2);
+    pouts2 = new Outputs(pmesh2, pinput2);
+    pouts2->MakeOutputs(pmesh2, pinput2);
+    if (pmesh2->nbtotal != pmesh->nbtotal) {
+      if (Globals::my_rank == 0)
+        std::cout << "### FATAL ERROR in main" << std::endl
+                  << "twin mesh has " << pmesh2->nbtotal << " MeshBlocks but the"
+                  << " primary has " << pmesh->nbtotal << ".  The two meshes must"
+                  << " be identically decomposed for the coupling to be"
+                  << " rank-local." << std::endl;
+#ifdef MPI_PARALLEL
+      MPI_Finalize();
+#endif
+      return(0);
+    }
+    // Put both meshes on one time axis from the very first cycle.
+    Real dt_sync = std::min(pmesh->dt, pmesh2->dt);
+    pmesh->dt = dt_sync;
+    pmesh2->dt = dt_sync;
+    if (Globals::my_rank == 0) {
+      std::cout << std::endl << "Twin mesh enabled: '" << twin_input << "'"
+                << std::endl;
+    }
+  }
+
   //=== Step 8. === START OF MAIN INTEGRATION LOOP =======================================
   // For performance, there is no error handler protecting this step (except outputs)
 
@@ -531,6 +638,14 @@ int main(int argc, char *argv[]) {
 
     pmesh->UserWorkInLoop();
 
+    // Advance the twin over the SAME dt.  The primary is advanced first so that a
+    // one-way coupling (B reading A) sees A already at the new time.
+    if (twin_enabled) {
+      for (int stage=1; stage<=ptlist2->nstages; ++stage)
+        ptlist2->DoTaskListOneStage(pmesh2, stage);
+      pmesh2->UserWorkInLoop();
+    }
+
     pmesh->ncycle++;
     pmesh->time += pmesh->dt;
     mbcnt += pmesh->nbtotal;
@@ -540,11 +655,27 @@ int main(int argc, char *argv[]) {
 
     pmesh->NewTimeStep();
 
+    if (twin_enabled) {
+      pmesh2->ncycle++;
+      pmesh2->time += pmesh2->dt;
+      mbcnt += pmesh2->nbtotal;
+      pmesh2->step_since_lb++;
+      pmesh2->LoadBalancingAndAdaptiveMeshRefinement(pinput2);
+      pmesh2->NewTimeStep();
+      // Each mesh proposed its own CFL dt; the smaller governs both so that they
+      // never drift apart in time.
+      Real dt_sync = std::min(pmesh->dt, pmesh2->dt);
+      pmesh->dt = dt_sync;
+      pmesh2->dt = dt_sync;
+    }
+
 #ifdef ENABLE_EXCEPTIONS
     try {
 #endif
       if (pmesh->time < pmesh->tlim) // skip the final output as it happens later
         pouts->MakeOutputs(pmesh,pinput);
+      if (twin_enabled && pmesh2->time < pmesh2->tlim)
+        pouts2->MakeOutputs(pmesh2,pinput2);
 #ifdef ENABLE_EXCEPTIONS
     }
     catch(std::bad_alloc& ba) {
@@ -582,11 +713,13 @@ int main(int argc, char *argv[]) {
     pmesh->OutputCycleDiagnostics();
 
   pmesh->UserWorkAfterLoop(pinput);
+  if (twin_enabled) pmesh2->UserWorkAfterLoop(pinput2);
 
 #ifdef ENABLE_EXCEPTIONS
   try {
 #endif
     pouts->MakeOutputs(pmesh,pinput,true);
+    if (twin_enabled) pouts2->MakeOutputs(pmesh2,pinput2,true);
 #ifdef ENABLE_EXCEPTIONS
   }
   catch(std::bad_alloc& ba) {
@@ -657,6 +790,10 @@ int main(int argc, char *argv[]) {
   delete ptlist;
   delete pouts;
   delete pchemradlist;
+  delete pinput2;
+  delete pmesh2;
+  delete ptlist2;
+  delete pouts2;
 
 #ifdef MPI_PARALLEL
   MPI_Finalize();

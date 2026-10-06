@@ -18,11 +18,19 @@
 #include "athena_arrays.hpp"
 #include "defs.hpp"
 
-// See if we have FP16 support
+// See if we have FP16 support.
+//
+// `defined(__fp16)` and `defined(_Float16)` are always FALSE: those are type
+// names, not macros, so the only tests that ever fire are the predefined macros
+// below.  __FLT16_MAX__ is defined by GCC and Clang exactly when the standard
+// _Float16 type is available -- which on x86-64 GCC 12+ it is -- whereas __fp16
+// is an ARM-only spelling.  The previous order therefore selected __fp16 on
+// x86-64 GCC and broke the build there ("'__fp16' was not declared in this
+// scope"), while happening to work on ARM where both macros are set.
 #ifndef __INTEL_LLVM_COMPILER
-#if defined(__fp16) || defined(__FLT16_MAX__) || defined(__ARM_FP16_FORMAT_IEEE)
+#if defined(__ARM_FP16_FORMAT_IEEE)
 #define fp16_t __fp16
-#elif defined(_Float16)
+#elif defined(__FLT16_MAX__)
 #define fp16_t _Float16
 #endif
 #else

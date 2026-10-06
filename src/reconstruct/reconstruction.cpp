@@ -18,6 +18,9 @@
 #include <stdexcept>  // runtime_error
 #include <string>     // c_str()
 
+// Athena++ headers (for the locally isothermal guard)
+#include "../eos/eos.hpp"
+
 // Athena++ headers
 #include "../athena.hpp"
 #include "../athena_arrays.hpp"
@@ -97,6 +100,18 @@ Reconstruction::Reconstruction(MeshBlock *pmb, ParameterInput *pin) :
     std::stringstream msg;
     msg << "### FATAL ERROR in Reconstruction constructor" << std::endl
         << "xorder=" << input_recon << " not valid choice for reconstruction"<< std::endl;
+    ATHENA_ERROR(msg);
+  }
+
+  // characteristic projection assumes a spatially constant isothermal sound
+  // speed; forbid it when a locally isothermal c_s(x) has been enrolled
+  if (characteristic_projection_ && !NON_BAROTROPIC_EOS
+      && EquationOfState::IsoSoundSpeedEnrolled()) {
+    std::stringstream msg;
+    msg << "### FATAL ERROR in Reconstruction constructor" << std::endl
+        << "characteristic projection (xorder=" << input_recon << ") is not"
+        << std::endl << "supported with a locally isothermal (position-"
+        << "dependent) sound speed" << std::endl;
     ATHENA_ERROR(msg);
   }
   // Check for incompatible choices with broader solver configuration

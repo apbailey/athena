@@ -500,6 +500,9 @@ void Coordinates::AddCoordTermsDivergence(const Real dt, const AthenaArray<Real>
                                    const AthenaArray<Real> &prim,
                                    const AthenaArray<Real> &bcc, AthenaArray<Real> &u) {
   Real iso_cs = pmy_block->peos->GetIsoSoundSpeed();
+  // locally isothermal: per-cell c_s for the pressure source terms
+  const bool local_iso = (!NON_BAROTROPIC_EOS
+                          && EquationOfState::IsoSoundSpeedEnrolled());
   bool use_x2_fluxes = pmy_block->block_size.nx2 > 1;
 
   HydroDiffusion &hd = pmy_block->phydro->hdif;
@@ -511,12 +514,17 @@ void Coordinates::AddCoordTermsDivergence(const Real dt, const AthenaArray<Real>
     for (int j=pmy_block->js; j<=pmy_block->je; ++j) {
 #pragma omp simd
       for (int i=pmy_block->is; i<=pmy_block->ie; ++i) {
+        Real iso_cs2_ = iso_cs*iso_cs;
+        if (local_iso) {
+          iso_cs2_ = SQR(pmy_block->peos->LocalIsoSoundSpeed(x1v(i), x2v(j),
+                                                             x3v(k)));
+        }
         // src_1 = < M_{theta theta} + M_{phi phi} ><1/r>
         Real m_ii = prim(IDN,k,j,i)*(SQR(prim(IM2,k,j,i)) + SQR(prim(IM3,k,j,i)));
         if (NON_BAROTROPIC_EOS) {
           m_ii += 2.0*prim(IEN,k,j,i);
         } else {
-          m_ii += 2.0*(iso_cs*iso_cs)*prim(IDN,k,j,i);
+          m_ii += 2.0*iso_cs2_*prim(IDN,k,j,i);
         }
         if (MAGNETIC_FIELDS_ENABLED) {
           m_ii += SQR(bcc(IB1,k,j,i));
@@ -545,7 +553,7 @@ void Coordinates::AddCoordTermsDivergence(const Real dt, const AthenaArray<Real>
         if (NON_BAROTROPIC_EOS) {
           m_pp += prim(IEN,k,j,i);
         } else {
-          m_pp += (iso_cs*iso_cs)*prim(IDN,k,j,i);
+          m_pp += iso_cs2_*prim(IDN,k,j,i);
         }
         if (MAGNETIC_FIELDS_ENABLED) {
           m_pp += 0.5*( SQR(bcc(IB1,k,j,i)) + SQR(bcc(IB2,k,j,i))

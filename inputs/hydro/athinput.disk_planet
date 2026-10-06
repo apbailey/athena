@@ -1,0 +1,97 @@
+<comment>
+problem   = Global star-centered disk + embedded planet (rotating frame), q_th = 20
+reference = global equivalent of the local cartesian Hill runs (bondi_accretion_cartesian)
+configure = python configure.py --prob=disk_planet --coord=spherical_polar --eos=isothermal --flux=hllc -hdf5
+
+# Units: GM = r0 = 1 (so Omega_K = 1 at the planet), iso_sound_speed = h0 = H0/r0.
+# The dimensionless planet inputs (qthermal, r_sink_h, epsilon_h) carry over verbatim
+# from the local Hill runs; R_H = (qthermal/3)^(1/3) * h0 * r0 = 0.0934 here.
+# Omega0 is set internally to the corotation value sqrt((GM+GM_p)/r0^3).
+# theta spans only z >= 0; the midplane (outer_x2) is reflecting, as in the local runs.
+
+<job>
+problem_id  = diskp
+
+<output1>
+file_type   = hdf5
+variable    = prim
+dt          = 6.283185307179586
+ghost_zones = true
+
+<output2>
+file_type   = rst
+dt          = 62.83185307179586
+
+<time>
+cfl_number  = 0.3
+nlim        = -1
+tlim        = 314.159265358979    # 50 orbits
+integrator  = rk2
+xorder      = 2
+ncycle_out  = 1000
+
+<mesh>
+nx1         = 64                  # radial
+x1min       = 0.5
+x1max       = 2.0
+x1rat       = 1.0175              # log-ish spacing: dr/r ~ const ~ root dtheta
+ix1_bc      = user
+ox1_bc      = user
+
+nx2         = 16                  # colatitude, z>=0 wedge above the midplane
+x2min       = 1.270796326794897   # pi/2 - 0.3  (~6 H0; keeps corona above dfloor)
+x2max       = 1.570796326794897   # pi/2
+ix2_bc      = user
+ox2_bc      = reflecting          # midplane symmetry (local-run convention)
+
+nx3         = 256                 # full azimuth
+x3min       = -3.141592653589793
+x3max       = 3.141592653589793
+ix3_bc      = periodic
+ox3_bc      = periodic
+
+refinement  = static
+
+<meshblock>
+nx1 = 16
+nx2 = 8
+nx3 = 16
+
+# ~cubic cells at the planet (r=1, theta=pi/2, phi=0): root ~ 0.025 r0; each level
+# halves. Level 3 -> ~0.003 r0 ~ 0.06 H0 ~ 0.03 R_H inside the Hill sphere.
+<refinement1>                     # ~ +-3 R_H box around the planet
+x1min = 0.72
+x1max = 1.28
+x2min = 1.290796326794897         # pi/2 - 0.28
+x2max = 1.570796326794897
+x3min = -0.28
+x3max = 0.28
+level = 2
+
+<refinement2>                     # ~ +-1.2 R_H
+x1min = 0.888
+x1max = 1.112
+x2min = 1.458796326794897         # pi/2 - 0.112
+x2max = 1.570796326794897
+x3min = -0.112
+x3max = 0.112
+level = 3
+
+<hydro>
+iso_sound_speed = 0.05            # = h0 (H0/r0 at the planet)
+dfloor          = 1.0e-12
+
+<orbital_advection>
+# Omega0 is overwritten internally with sqrt((GM+GM_p)/r0^3); do not set it here.
+
+<problem>
+GM           = 1.0
+r0           = 1.0
+rho0         = 1.0
+dslope       = 0.0
+qthermal     = 19.581508598567883
+r_sink_h     = 0.1                # sink radius in H0 units (same number as local runs)
+epsilon_h    = 0.0                # softening in H0 units
+sink_density = 1.0e-10
+tinj         = 6.283185307179586  # ramp planet+indirect over 1 orbit
+indirect_term = true

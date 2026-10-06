@@ -95,3 +95,9 @@ void EquationOfState::ConservedToPrimitiveCellAverage(
 
   return;
 }
+
+//----------------------------------------------------------------------------------------
+// Single definition of the locally isothermal sound-speed hook declared in eos.hpp.
+// It lives here because this translation unit is compiled for every EOS configuration.
+
+EquationOfState::IsoSoundSpeedFunc EquationOfState::iso_cs_func_ = nullptr;

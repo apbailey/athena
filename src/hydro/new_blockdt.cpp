@@ -112,6 +112,11 @@ void Hydro::NewBlockTimeStep() {
               dt3(i) /= (speed);
             } else {
               Real cs = pmb->peos->SoundSpeed(wi);
+              // locally isothermal: signal speed from the local c_s
+              if (!NON_BAROTROPIC_EOS && EquationOfState::IsoSoundSpeedEnrolled()) {
+                cs = pmb->peos->LocalIsoSoundSpeed(
+                    pmb->pcoord->x1v(i), pmb->pcoord->x2v(j), pmb->pcoord->x3v(k));
+              }
               Real speed1 = std::max(cspeed, (std::abs(wi[IVX]) + cs));
               Real speed2 = std::max(cspeed, (std::abs(wi[IVY]) + cs));
               Real speed3 = std::max(cspeed, (std::abs(wi[IVZ]) + cs));

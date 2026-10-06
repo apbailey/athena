@@ -28,6 +28,7 @@
 // Athena++ headers
 #include "../../../athena.hpp"
 #include "../../../athena_arrays.hpp"
+#include "../../../coordinates/coordinates.hpp"
 #include "../../../eos/eos.hpp"
 #include "../../hydro.hpp"
 
@@ -44,6 +45,10 @@ void Hydro::RiemannSolver(const int k, const int j, const int il, const int iu,
   Real wli[(NHYDRO)],wri[(NHYDRO)],wroe[(NHYDRO)];
   Real fl[(NHYDRO)],fr[(NHYDRO)],flxi[(NHYDRO)];
   Real iso_cs = pmy_block->peos->GetIsoSoundSpeed();
+  // locally isothermal: c_s may vary with position; evaluated at face centers
+  Coordinates *pco = pmy_block->pcoord;
+  const bool local_iso = (!NON_BAROTROPIC_EOS && !GENERAL_EOS
+                          && EquationOfState::IsoSoundSpeedEnrolled());
   Real gamma;
   if (GENERAL_EOS) {
     gamma = std::nan("");
@@ -67,6 +72,20 @@ void Hydro::RiemannSolver(const int k, const int j, const int il, const int iu,
     wri[IVY]=wr(ivy,i);
     wri[IVZ]=wr(ivz,i);
     if (NON_BAROTROPIC_EOS) wri[IPR]=wr(IPR,i);
+
+    // locally isothermal: single sound speed at this interface's position
+    Real iso_csi = iso_cs;
+    if (local_iso) {
+      Real fx1, fx2, fx3;
+      if (ivx == IVX) {
+        fx1 = pco->x1f(i); fx2 = pco->x2v(j); fx3 = pco->x3v(k);
+      } else if (ivx == IVY) {
+        fx1 = pco->x1v(i); fx2 = pco->x2f(j); fx3 = pco->x3v(k);
+      } else {
+        fx1 = pco->x1v(i); fx2 = pco->x2v(j); fx3 = pco->x3f(k);
+      }
+      iso_csi = pmy_block->peos->LocalIsoSoundSpeed(fx1, fx2, fx3);
+    }
 
     Real el,er,cl,cr,al,ar;
     if  (GENERAL_EOS) {
@@ -102,7 +121,11 @@ void Hydro::RiemannSolver(const int k, const int j, const int il, const int iu,
 
       cl = pmy_block->peos->SoundSpeed(wli);
       cr = pmy_block->peos->SoundSpeed(wri);
-      Real a  = iso_cs;
+      if (!NON_BAROTROPIC_EOS) {
+        cl = iso_csi;
+        cr = iso_csi;
+      }
+      Real a  = iso_csi;
       if (NON_BAROTROPIC_EOS) {
         Real q = hroe - 0.5*(SQR(wroe[IVX]) + SQR(wroe[IVY]) + SQR(wroe[IVZ]));
         a = (q < 0.0) ? 0.0 : std::sqrt(gm1*q);
@@ -138,8 +161,8 @@ void Hydro::RiemannSolver(const int k, const int j, const int il, const int iu,
       fl[IEN] = el*vxl + wli[IPR]*wli[IVX];
       fr[IEN] = er*vxr + wri[IPR]*wri[IVX];
     } else {
-      fl[IVX] += (iso_cs*iso_cs)*wli[IDN];
-      fr[IVX] += (iso_cs*iso_cs)*wri[IDN];
+      fl[IVX] += (iso_csi*iso_csi)*wli[IDN];
+      fr[IVX] += (iso_csi*iso_csi)*wri[IDN];
     }
 
     //--- Step 6. Compute the HLLE flux at interface.

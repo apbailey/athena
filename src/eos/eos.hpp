@@ -146,6 +146,18 @@ class EquationOfState {
   Real EgasFromRhoP(Real rho, Real pres);
   Real AsqFromRhoP(Real rho, Real pres);
   Real GetIsoSoundSpeed() const {return iso_sound_speed_;}
+  // Locally isothermal extension: optional position-dependent isothermal sound
+  // speed c_s(x1,x2,x3) enrolled by the problem generator. Used by the
+  // isothermal Riemann solver (face centers), the CFL signal speed, and the
+  // curvilinear pressure source terms (cell centers). When no function is
+  // enrolled the constant <hydro>/iso_sound_speed is used (default behavior).
+  using IsoSoundSpeedFunc = Real (*)(Real x1, Real x2, Real x3);
+  static IsoSoundSpeedFunc iso_cs_func_;
+  static void EnrollIsoSoundSpeed(IsoSoundSpeedFunc my_func) {iso_cs_func_ = my_func;}
+  static bool IsoSoundSpeedEnrolled() {return iso_cs_func_ != nullptr;}
+  Real LocalIsoSoundSpeed(Real x1, Real x2, Real x3) const {
+    return (iso_cs_func_ == nullptr) ? iso_sound_speed_ : iso_cs_func_(x1, x2, x3);
+  }
   Real GetDensityFloor() const {return density_floor_;}
   Real GetPressureFloor() const {return pressure_floor_;}
   Real GetScalarFloor() const {return scalar_floor_;}

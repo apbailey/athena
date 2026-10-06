@@ -904,7 +904,9 @@ if args['fft']:
 # -hdf5 argument
 if args['hdf5']:
     definitions['HDF5_OPTION'] = 'HDF5OUTPUT'
-
+    if args['mpi']:
+        makefile_options['PREPROCESSOR_FLAGS'] += ' -I/opt/homebrew/Cellar/hdf5-mpi/1.14.5/include'
+        makefile_options['LIBRARY_FLAGS'] += ' -L/opt/homebrew/Cellar/hdf5-mpi/1.14.5/lib'
     if args['hdf5_path'] != '':
         makefile_options['PREPROCESSOR_FLAGS'] += ' -I{0}/include'.format(
             args['hdf5_path'])

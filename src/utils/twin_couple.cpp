@@ -148,9 +148,29 @@ void TwinCoupler::CheckStencil() const {
   MPI_Allreduce(MPI_IN_PLACE, &worst, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, &nbad, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
 #endif
+  // The index-space stencil above is necessary but not sufficient: where the shell
+  // crosses a refinement boundary, prolongation fills a fine block's ghost zones from
+  // coarse cells that reach further in PHYSICAL space than +-NGHOST of the fine block
+  // does.  That leak is geometric, not advective -- forced cells are overwritten every
+  // stage, so nothing can advect through them -- and it is removed simply by making
+  // the band wider than the penetration depth.  On q20-h005-v2 (shell straddling
+  // levels 1-3) a band of 0.23 R_H left a 3.6e-12 residual in 49 of 518268 free cells,
+  // while 0.50, 0.82 and 1.14 R_H gave bitwise identical interiors.
+  const Real pen = worst - rmin_;             // measured stencil penetration
+  const Real band = rmax_ - rmin_;
   if (Globals::my_rank == 0) {
     std::cout << "  NGHOST=" << NGHOST << " stencil of the free interior reaches r_p = "
               << worst << " (shell outer edge " << rmax_ << ")" << std::endl;
+    if (band < 3.0*pen) {
+      std::cout << "### Warning in TwinCoupler" << std::endl
+                << "  forced band is " << band << " wide but the stencil penetrates "
+                << pen << "." << std::endl
+                << "  Prolongation across refinement boundaries can reach further than"
+                << " the index-space" << std::endl
+                << "  check sees.  Consider couple_rmax >= " << rmin_ + 3.0*pen
+                << ", or confirm the interior is" << std::endl
+                << "  unchanged when couple_rmax is increased." << std::endl;
+    }
   }
   if (nbad > 0) {
     std::stringstream msg;

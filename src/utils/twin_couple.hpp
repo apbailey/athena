@@ -15,7 +15,12 @@
 //!
 //! The shell is a Dirichlet layer, so it plays the role of ghost zones for the free
 //! interior and must be at least NGHOST cells thick along every coordinate direction.
-//! That is checked at construction, not assumed.
+//! That is checked at construction, not assumed.  The check is necessary but not
+//! sufficient where the shell crosses a refinement boundary: prolongation reaches
+//! further in physical space than the index-space stencil does, so the constructor
+//! additionally warns when the band is less than 3x the measured penetration.  The
+//! decisive test is that the free interior does not change when couple_rmax is
+//! increased.
 
 #include <vector>
 

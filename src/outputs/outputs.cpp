@@ -353,7 +353,7 @@ Outputs::Outputs(Mesh *pm, ParameterInput *pin) {
             }
           // Check float options
           } else if (type_string_check(base_type::F, 16, op)) {
-#ifdef fp16_t
+#ifdef ATHENA_HDF5_FP16
             if (H5T_NATIVE_FLOAT16 == H5I_INVALID_HID) {
               msg << "### FATAL ERROR in Outputs constructor" << std::endl
                   << "HDF5 is not configured for requested fp16 support in "
@@ -365,8 +365,10 @@ Outputs::Outputs(Mesh *pm, ParameterInput *pin) {
             pnew_type = new ATHDF5Output<fp16_t>(op);
 #else
             msg << "### FATAL ERROR in Outputs constructor" << std::endl
-                << "Compiler/hardware does not support half precision floating point"
-                << " in output block '" << op.block_name << "'" << std::endl;
+                << "Half precision output is unavailable in this build (the compiler"
+                << " provides no half type, or HDF5 is older than 1.14.3 and has no"
+                << " H5T_NATIVE_FLOAT16) in output block '" << op.block_name
+                << "'" << std::endl;
             ATHENA_ERROR(msg);
 #endif
           } else if (type_string_check(base_type::F, 32, op)) {

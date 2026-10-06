@@ -24,6 +24,14 @@
 #ifdef HDF5OUTPUT
 #include <H5Tpublic.h>
 #include <hdf5.h>
+// Half-precision HDF5 output needs TWO independent things: a compiler half type
+// (fp16_t, selected in athena.hpp) and an HDF5 that exposes H5T_NATIVE_FLOAT16,
+// which only arrived in HDF5 1.14.3.  Everything else builds fine against older
+// HDF5, so gate the fp16 path on both rather than on the compiler alone -- with
+// e.g. HDF5 1.14.0 the type exists but the HDF5 symbol does not.
+#if defined(fp16_t) && defined(H5T_NATIVE_FLOAT16)
+#define ATHENA_HDF5_FP16
+#endif
 #if H5_DOUBLE_PRECISION_ENABLED
 using H5Real = double;
 #if SINGLE_PRECISION_ENABLED
@@ -256,7 +264,7 @@ using mesh_t = typename std::conditional<
 };
 
 // Instantiate the get_[hdf5, mesh]_type functions for all types used in outputs.cpp
-#if defined(fp16_t) && defined(H5T_NATIVE_FLOAT16)
+#ifdef ATHENA_HDF5_FP16
 template<> inline hid_t ATHDF5Output<fp16_t>::get_hdf5_type() {
   return H5T_NATIVE_FLOAT16;
 }

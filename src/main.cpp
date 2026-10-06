@@ -529,6 +529,17 @@ int main(int argc, char *argv[]) {
     pmesh2->Initialize(0, pinput2);
     pouts2 = new Outputs(pmesh2, pinput2);
     pouts2->MakeOutputs(pmesh2, pinput2);
+    if (ptlist2->nstages != ptlist->nstages) {
+      if (Globals::my_rank == 0)
+        std::cout << "### FATAL ERROR in main" << std::endl
+                  << "twin integrator has " << ptlist2->nstages << " stages but"
+                  << " the primary has " << ptlist->nstages << "; the two are"
+                  << " advanced stage by stage and must agree." << std::endl;
+#ifdef MPI_PARALLEL
+      MPI_Finalize();
+#endif
+      return(0);
+    }
     if (pmesh2->nbtotal != pmesh->nbtotal) {
       if (Globals::my_rank == 0)
         std::cout << "### FATAL ERROR in main" << std::endl
@@ -635,6 +646,18 @@ int main(int argc, char *argv[]) {
       if (IM_RADIATION_ENABLED) {
         pmesh->pimrad->Iteration(pmesh,ptlist,stage);
       }
+      // The twin advances in lockstep STAGE BY STAGE, with its shell re-imposed
+      // from the source immediately before each of its stages.  Forcing only once
+      // per cycle would not isolate the twin's interior: the shell cells are
+      // themselves updated by the twin's own fluxes during a stage, and those
+      // fluxes see the region outside the shell, so with an NGHOST-thick shell the
+      // next stage would reconstruct the outermost free cells from contaminated
+      // values.  Per-stage forcing also puts the twin's stage n alongside the
+      // source's stage n rather than its previous whole-step value.
+      if (twin_enabled) {
+        if (pcouple != nullptr) pcouple->Apply();
+        ptlist2->DoTaskListOneStage(pmesh2, stage);
+      }
     }
 
     if (STS_ENABLED && pmesh->sts_integrator == "rkl2") {
@@ -649,14 +672,9 @@ int main(int argc, char *argv[]) {
     // Advance the twin over the SAME dt.  The primary is advanced first so that a
     // one-way coupling (B reading A) sees A already at the new time.
     if (twin_enabled) {
-      // Hand the twin the source's just-updated shell, so its step begins from the
-      // correct boundary state ...
-      if (pcouple != nullptr) pcouple->Apply();
-      for (int stage=1; stage<=ptlist2->nstages; ++stage)
-        ptlist2->DoTaskListOneStage(pmesh2, stage);
       pmesh2->UserWorkInLoop();
-      // ... and again afterwards, so the shell the twin stores and writes out holds
-      // the source's values rather than whatever its own fluxes did to them.
+      // Once more after the last stage, so the shell the twin stores and writes out
+      // holds the source's values rather than whatever its own fluxes did to them.
       if (pcouple != nullptr) pcouple->Apply();
     }
 

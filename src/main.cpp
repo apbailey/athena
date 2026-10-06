@@ -48,6 +48,7 @@
 #include "outputs/outputs.hpp"
 #include "parameter_input.hpp"
 #include "task_list/chem_rad_task_list.hpp"
+#include "utils/twin_couple.hpp"
 #include "utils/utils.hpp"
 
 // MPI/OpenMP headers
@@ -288,6 +289,7 @@ int main(int argc, char *argv[]) {
   Mesh *pmesh2 = nullptr;
   TimeIntegratorTaskList *ptlist2 = nullptr;
   Outputs *pouts2 = nullptr;
+  TwinCoupler *pcouple = nullptr;
   std::string twin_input = pinput->GetOrAddString("twin", "input", "");
   const bool twin_enabled = !twin_input.empty();
 
@@ -547,6 +549,12 @@ int main(int argc, char *argv[]) {
       std::cout << std::endl << "Twin mesh enabled: '" << twin_input << "'"
                 << std::endl;
     }
+    // One-way coupling is optional: without <twin>/couple_rmin the two meshes simply
+    // run side by side, which is the regression case.
+    if (pinput->DoesParameterExist("twin", "couple_rmin")) {
+      pcouple = new TwinCoupler(pmesh, pmesh2, pinput);
+      pcouple->Apply();   // impose the shell on the twin's initial conditions
+    }
   }
 
   //=== Step 8. === START OF MAIN INTEGRATION LOOP =======================================
@@ -641,9 +649,15 @@ int main(int argc, char *argv[]) {
     // Advance the twin over the SAME dt.  The primary is advanced first so that a
     // one-way coupling (B reading A) sees A already at the new time.
     if (twin_enabled) {
+      // Hand the twin the source's just-updated shell, so its step begins from the
+      // correct boundary state ...
+      if (pcouple != nullptr) pcouple->Apply();
       for (int stage=1; stage<=ptlist2->nstages; ++stage)
         ptlist2->DoTaskListOneStage(pmesh2, stage);
       pmesh2->UserWorkInLoop();
+      // ... and again afterwards, so the shell the twin stores and writes out holds
+      // the source's values rather than whatever its own fluxes did to them.
+      if (pcouple != nullptr) pcouple->Apply();
     }
 
     pmesh->ncycle++;
@@ -794,6 +808,7 @@ int main(int argc, char *argv[]) {
   delete pmesh2;
   delete ptlist2;
   delete pouts2;
+  delete pcouple;
 
 #ifdef MPI_PARALLEL
   MPI_Finalize();

@@ -116,9 +116,11 @@ BoundaryValues::BoundaryValues(MeshBlock *pmb, BoundaryFlag *input_bcs,
     bvars_sts.reserve(1);
   }
 
-  // Matches initial value of Mesh::next_phys_id_
+  // Matches initial value of Mesh::next_phys_id_, including this Mesh's tag
+  // offset -- the two counters must agree or blocks of one Mesh would assign
+  // phys ids from a different base than the Mesh reserved.
   // reserve phys=0 for former TAG_AMR=8; now hard-coded in Mesh::CreateAMRMPITag()
-  bvars_next_phys_id_ = 1;
+  bvars_next_phys_id_ = 1 + pmy_mesh_->TagPhysIDOffset();
 
   // BVals constructor section only containing ALL shearing box-specific stuff
   // set parameters for shearing box bc and allocate buffers

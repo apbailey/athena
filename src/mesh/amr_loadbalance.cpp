@@ -1475,8 +1475,10 @@ void Mesh::ReceiveAndSetFaceFieldCorrection(int *newrank) {
 //! See comments on BoundaryBase::CreateBvalsMPITag()
 
 int Mesh::CreateAMRMPITag(int lid, int ox1, int ox2, int ox3) {
-  // former "AthenaTagMPI" AthenaTagMPI::amr=8 redefined to 0
-  return (lid<<8) | (ox1<<7)| (ox2<<6) | (ox3<<5);
+  // former "AthenaTagMPI" AthenaTagMPI::amr=8 redefined to 0.  The low 5 bits
+  // are the phys field and are zero here, so OR in this Mesh's tag offset to
+  // keep load-balance transfers of coexisting Meshes distinct as well.
+  return (lid<<8) | (ox1<<7)| (ox2<<6) | (ox3<<5) | tag_phys_id_offset_;
 }
 
 //----------------------------------------------------------------------------------------

@@ -140,8 +140,20 @@ Mesh::Mesh(ParameterInput *pin, int mesh_test) :
 
 #ifdef MPI_PARALLEL
   // reserve phys=0 for former TAG_AMR=8; now hard-coded in Mesh::CreateAMRMPITag()
-  next_phys_id_  = 1;
+  // tag_offset shifts this Mesh's whole phys bitfield so that a second Mesh in
+  // the same executable cannot collide with it.  See Mesh::TagPhysIDOffset().
+  tag_phys_id_offset_ = pin->GetOrAddInteger("mesh", "tag_offset", 0);
+  next_phys_id_  = 1 + tag_phys_id_offset_;
   ReserveMeshBlockPhysIDs();
+  if (tag_phys_id_offset_ < 0 || next_phys_id_ > 32) {
+    std::stringstream msg;
+    msg << "### FATAL ERROR in Mesh constructor" << std::endl
+        << "<mesh>/tag_offset=" << tag_phys_id_offset_ << " leaves next_phys_id="
+        << next_phys_id_ << ", outside the 5-bit phys field (0..31)." << std::endl;
+    ATHENA_ERROR(msg);
+  }
+#else
+  tag_phys_id_offset_ = 0;
 #endif
 
   // check number of OpenMP threads for mesh
@@ -691,8 +703,20 @@ Mesh::Mesh(ParameterInput *pin, IOWrapper& resfile, int mesh_test) :
 
 #ifdef MPI_PARALLEL
   // reserve phys=0 for former TAG_AMR=8; now hard-coded in Mesh::CreateAMRMPITag()
-  next_phys_id_  = 1;
+  // tag_offset shifts this Mesh's whole phys bitfield so that a second Mesh in
+  // the same executable cannot collide with it.  See Mesh::TagPhysIDOffset().
+  tag_phys_id_offset_ = pin->GetOrAddInteger("mesh", "tag_offset", 0);
+  next_phys_id_  = 1 + tag_phys_id_offset_;
   ReserveMeshBlockPhysIDs();
+  if (tag_phys_id_offset_ < 0 || next_phys_id_ > 32) {
+    std::stringstream msg;
+    msg << "### FATAL ERROR in Mesh constructor" << std::endl
+        << "<mesh>/tag_offset=" << tag_phys_id_offset_ << " leaves next_phys_id="
+        << next_phys_id_ << ", outside the 5-bit phys field (0..31)." << std::endl;
+    ATHENA_ERROR(msg);
+  }
+#else
+  tag_phys_id_offset_ = 0;
 #endif
 
   // check the number of OpenMP threads for mesh

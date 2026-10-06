@@ -291,6 +291,12 @@ class Mesh {
   void OutputCycleDiagnostics();
   void LoadBalancingAndAdaptiveMeshRefinement(ParameterInput *pin);
   int CreateAMRMPITag(int lid, int ox1, int ox2, int ox3);
+  //! Base of this Mesh's MPI tag "phys" bitfield.  Nonzero only when several
+  //! Mesh objects coexist in one executable (two-mesh coupling): their block
+  //! lists are identical, so CreateBvalsMPITag() would otherwise generate
+  //! byte-identical tags and the two meshes' boundary exchanges would
+  //! cross-talk.  Set per Mesh via <mesh>/tag_offset.
+  int TagPhysIDOffset() const { return tag_phys_id_offset_; }
   MeshBlock* FindMeshBlock(int tgid);
   void ApplyUserWorkBeforeOutput(ParameterInput *pin);
 
@@ -305,6 +311,7 @@ class Mesh {
  private:
   // data
   int next_phys_id_; // next unused value for encoding final component of MPI tag bitfield
+  int tag_phys_id_offset_; // base of the phys bitfield; see TagPhysIDOffset()
   int root_level, max_level, current_level;
   int num_mesh_threads_;
   int gids_, gide_;
